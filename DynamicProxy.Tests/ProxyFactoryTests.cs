@@ -1,8 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Reflection;
-using System.Text;
 using NUnit.Framework;
 using Rhino.Mocks;
 
@@ -112,7 +110,7 @@ namespace DynamicProxy.Tests
         }
 
         [TestCaseSource(nameof(MemberTestCasesSimpleInvoke_VoidMethods))]
-        public void CallHandlerCalledWithCorrectMethodInfo_VoidMethods(Action<ITestInterface> testAction, string methodName)
+        public void CallHandlerCalledWithCorrectArgs_VoidMethods(Action<ITestInterface> testAction, string methodName)
         {
             var handler = MockRepository.GenerateStrictMock<ICallHandler>();
 
@@ -128,6 +126,26 @@ namespace DynamicProxy.Tests
             testAction(proxy);
 
             handler.VerifyAllExpectations();
+        }
+
+        [Test]
+        public void CanCreateDuplicateInterfaces()
+        {
+            var handler = MockRepository.GenerateStub<ICallHandler>();
+            var factory = new ProxyFactory();
+            Assert.DoesNotThrow(() =>
+            {
+                factory.Create<ITestInterface>(handler);
+                factory.Create<ITestInterface>(handler);
+            });
+        }
+
+        [Test]
+        public void CannotProxyAbstractClasses()
+        {
+            var handler = MockRepository.GenerateStub<ICallHandler>();
+            var factory = new ProxyFactory();
+            Assert.Throws<NotSupportedException>(() => factory.Create<TestAbstractClass>(handler));
         }
     }
 
@@ -153,10 +171,13 @@ namespace DynamicProxy.Tests
         string this[string index] { get; set; }
     }
 
+    public abstract class TestAbstractClass
+    {
+        
+    }
+
     public class TestPoco
     {
-        public int X { get; set; }
-        public string Y { get; set; }
 
     }
 }

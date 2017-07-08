@@ -11,21 +11,27 @@ namespace DynamicProxy
     {
         private static ModuleBuilder s_ModuleBuilder;
 
-        private static readonly Dictionary<string, Type> s_ProxyCache = new Dictionary<string, Type>();
+        private static readonly Dictionary<Type, Type> s_InterfaceToProxyCache = new Dictionary<Type, Type>();
 
         public T Create<T>(ICallHandler callHandler)
         {
             if (callHandler == null) throw new ArgumentNullException(nameof(callHandler));
-
-            Type proxyType;
-            var name = typeof(T).FullName;
-            if (!s_ProxyCache.TryGetValue(typeof(T).FullName, out proxyType))
+            var interfaceType = typeof(T);
+            if (!interfaceType.IsInterface)
             {
-                proxyType = CreateProxyType<T>();
-                s_ProxyCache.Add(name, proxyType);
+                throw new NotSupportedException("DynamicProxy can only generate proxies for interfaces.");
             }
+            lock (s_InterfaceToProxyCache)
+            {
+                Type proxyType;
+                if (!s_InterfaceToProxyCache.TryGetValue(typeof(T), out proxyType))
+                {
+                    proxyType = CreateProxyType<T>();
+                    s_InterfaceToProxyCache.Add(typeof(T), proxyType);
+                }
 
-            return (T)Activator.CreateInstance(proxyType, callHandler);
+                return (T) Activator.CreateInstance(proxyType, callHandler);
+            }
         }
 
         private void InitialiseModuleBuilder()
