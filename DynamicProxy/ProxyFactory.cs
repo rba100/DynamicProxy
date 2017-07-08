@@ -7,12 +7,24 @@ using System.Threading;
 
 namespace DynamicProxy
 {
+    /// <summary>
+    /// Generates objects that implement a given interface. When methods on the
+    /// generated object are called, the call is deledated to the ICallHandler provider
+    /// that consumers must implement.
+    /// </summary>
     public class ProxyFactory
     {
         private static ModuleBuilder s_ModuleBuilder;
 
         private static readonly Dictionary<Type, Type> s_InterfaceToProxyCache = new Dictionary<Type, Type>();
 
+        /// <summary>
+        /// Creates a proxy object for the given interface.
+        /// </summary>
+        /// <typeparam name="T">Must be an interface.</typeparam>
+        /// <param name="callHandler">
+        /// ICallHandler.HandleCall will be called on any method call on the proxy object.
+        /// </param>
         public T Create<T>(ICallHandler callHandler)
         {
             if (callHandler == null) throw new ArgumentNullException(nameof(callHandler));
@@ -21,17 +33,17 @@ namespace DynamicProxy
             {
                 throw new NotSupportedException("DynamicProxy can only generate proxies for interfaces.");
             }
+
+            Type proxyType;
             lock (s_InterfaceToProxyCache)
             {
-                Type proxyType;
-                if (!s_InterfaceToProxyCache.TryGetValue(typeof(T), out proxyType))
+                if (!s_InterfaceToProxyCache.TryGetValue(interfaceType, out proxyType))
                 {
-                    proxyType = CreateProxyType<T>();
-                    s_InterfaceToProxyCache.Add(typeof(T), proxyType);
+                    proxyType = CreateInterfaceImplementation<T>();
+                    s_InterfaceToProxyCache.Add(interfaceType, proxyType);
                 }
-
-                return (T) Activator.CreateInstance(proxyType, callHandler);
             }
+            return (T)Activator.CreateInstance(proxyType, callHandler);
         }
 
         private void InitialiseModuleBuilder()
@@ -52,7 +64,7 @@ namespace DynamicProxy
             }
         }
 
-        private TypeBuilder CreateType(Type interfaceType)
+        private TypeBuilder CreateClassBuilder(Type interfaceType)
         {
             InitialiseModuleBuilder();
 
@@ -69,9 +81,9 @@ namespace DynamicProxy
             return typeBuilder;
         }
 
-        private Type CreateProxyType<T>()
+        private Type CreateInterfaceImplementation<T>()
         {
-            var typeBuilder = CreateType(typeof(T));
+            var typeBuilder = CreateClassBuilder(typeof(T));
 
             // Add 'private readonly ICallHandler _callHandler'
             var callHandlerFieldBuilder = typeBuilder.DefineField("_callHandler", typeof(ICallHandler),
