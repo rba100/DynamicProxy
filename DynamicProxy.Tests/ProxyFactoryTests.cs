@@ -46,42 +46,47 @@ namespace DynamicProxy.Tests
 
         public static IEnumerable<TestCaseData> MemberTestCasesSimpleInvoke()
         {
-            var i = 10;
+            var i = 1;
             var s = "payload";
             var o = new TestPoco();
+            var empty = new object[0];
+            var allArgs = new object[] { i, s, o };
+            object[] ia = new object[] { i };
+            object[] sa = new object[] { s };
+            object[] oa = new object[] { o };
 
-            yield return new TestCaseData((Func<ITestInterface, object>) (ti => ti.IntMethod()), "IntMethod", 0)
+            yield return new TestCaseData((Func<ITestInterface, object>)(ti => ti.IntMethod()), empty, "IntMethod", 0)
                 .SetName("IntMethod");
-            yield return new TestCaseData((Func<ITestInterface, object>) (ti => ti.IntMethodArgs(i, s, o)), "IntMethodArgs", 0)
+            yield return new TestCaseData((Func<ITestInterface, object>)(ti => ti.IntMethodArgs(i, s, o)), allArgs, "IntMethodArgs", 0)
                 .SetName("IntMethodArgs");
-            yield return new TestCaseData((Func<ITestInterface, object>) (ti => ti.ObjectMethod()), "ObjectMethod", o)
+            yield return new TestCaseData((Func<ITestInterface, object>)(ti => ti.ObjectMethod()), empty, "ObjectMethod", o)
                 .SetName("ObjectMethod");
-            yield return new TestCaseData((Func<ITestInterface, object>)(ti => ti.ObjectMethodArgs(i, s, o)), "ObjectMethodArgs", o)
+            yield return new TestCaseData((Func<ITestInterface, object>)(ti => ti.ObjectMethodArgs(i, s, o)), allArgs, "ObjectMethodArgs", o)
                 .SetName("ObjectMethodArgs");
-            yield return new TestCaseData((Func<ITestInterface, object>)(ti => ti.IntMethodOverride()), "IntMethodOverride", 0)
+            yield return new TestCaseData((Func<ITestInterface, object>)(ti => ti.IntMethodOverride()), empty, "IntMethodOverride", 0)
                 .SetName("IntMethodOverride()");
-            yield return new TestCaseData((Func<ITestInterface, object>)(ti => ti.IntMethodOverride(i)), "IntMethodOverride", 0)
+            yield return new TestCaseData((Func<ITestInterface, object>)(ti => ti.IntMethodOverride(i)), ia, "IntMethodOverride", 0)
                 .SetName("IntMethodOverride(int)");
-            yield return new TestCaseData((Func<ITestInterface, object>)(ti => ti.IntMethodOverride(s)), "IntMethodOverride", 0)
+            yield return new TestCaseData((Func<ITestInterface, object>)(ti => ti.IntMethodOverride(s)), sa, "IntMethodOverride", 0)
                 .SetName("IntMethodOverride(string)");
-            yield return new TestCaseData((Func<ITestInterface, object>)(ti => ti.IntMethodOverride(0)), "IntMethodOverride", 0)
+            yield return new TestCaseData((Func<ITestInterface, object>)(ti => ti.IntMethodOverride(o)), oa, "IntMethodOverride", 0)
                 .SetName("IntMethodOverride(object)");
-            yield return new TestCaseData((Func<ITestInterface, object>)(ti => ti.Integer), "get_Integer", 0)
+            yield return new TestCaseData((Func<ITestInterface, object>)(ti => ti.Integer), empty, "get_Integer", 0)
                 .SetName("Get property");
-            yield return new TestCaseData((Func<ITestInterface, object>)(ti => ti[1]), "get_Item", 99)
+            yield return new TestCaseData((Func<ITestInterface, object>)(ti => ti[1]), ia, "get_Item", 99)
                 .SetName("Get int index");
-            yield return new TestCaseData((Func<ITestInterface, object>)(ti => ti["hello"]), "get_Item", "moon")
+            yield return new TestCaseData((Func<ITestInterface, object>)(ti => ti["payload"]), sa, "get_Item", "moon")
                 .SetName("Get string index");
         }
 
         [TestCaseSource(nameof(MemberTestCasesSimpleInvoke))]
-        public void CallHandlerCalledWithCorrectMethodInfo(Func<ITestInterface, object> testAction, string methodName, object returnObject)
+        public void CallHandlerCalledWithCorrectArgs(Func<ITestInterface, object> testAction, object[] args, string methodName,  object returnObject)
         {
-            var handler = MockRepository.GenerateMock<ICallHandler>();
+            var handler = MockRepository.GenerateStrictMock<ICallHandler>();
 
             handler.Expect(h => h.HandleCall(
                 Arg<MethodInfo>.Matches(m => m.Name == methodName),
-                Arg<object[]>.Is.Anything))
+                Arg<object[]>.Matches(a => ArraysEquivilent(a, args))))
                 .Repeat.Once()
                 .Return(returnObject);
 
@@ -94,6 +99,16 @@ namespace DynamicProxy.Tests
             Assert.AreEqual(returnObject, result);
 
             handler.VerifyAllExpectations();
+        }
+
+        private bool ArraysEquivilent(object[] a, object[] b)
+        {
+            if (a.Length != b.Length) return false;
+            for (var i = 0; i < a.Length; i++)
+            {
+                if (!b[i].Equals(a[i])) return false;
+            }
+            return true;
         }
 
         [TestCaseSource(nameof(MemberTestCasesSimpleInvoke_VoidMethods))]
@@ -131,6 +146,7 @@ namespace DynamicProxy.Tests
         int IntMethodOverride(TestPoco o);
 
         event EventHandler Event;
+
         int Integer { get; set; }
 
         int this[int index] { get; set; }
