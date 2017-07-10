@@ -107,27 +107,48 @@ namespace DynamicProxy
 
             foreach (var property in properties)
             {
-                var propertyBuilder = typeBuilder.DefineProperty(property.Name, PropertyAttributes.None,
-                    property.PropertyType, null);
+                var propertyBuilder = typeBuilder.DefineProperty(
+                    property.Name,
+                    PropertyAttributes.None,
+                    property.PropertyType,
+                    null);
 
                 var setter = property.GetSetMethod();
                 if (setter != null)
                 {
-                    propertyBuilder.SetSetMethod(GenerateProxyMethodFromInfo(setter, typeBuilder, callHandlerFieldBuilder, getMethodFromHandle));
+                    propertyBuilder.SetSetMethod(GenerateProxyMethodFromInfo(
+                        setter,
+                        typeBuilder,
+                        callHandlerFieldBuilder,
+                        getMethodFromHandle));
                 }
 
                 var getter = property.GetGetMethod();
                 if (getter != null)
                 {
-                    propertyBuilder.SetGetMethod(GenerateProxyMethodFromInfo(getter, typeBuilder, callHandlerFieldBuilder, getMethodFromHandle));
+                    propertyBuilder.SetGetMethod(GenerateProxyMethodFromInfo(
+                        getter,
+                        typeBuilder,
+                        callHandlerFieldBuilder,
+                        getMethodFromHandle));
                 }
             }
 
             foreach (var evt in events)
             {
                 var eventBuilder = typeBuilder.DefineEvent(evt.Name, EventAttributes.None, evt.EventHandlerType);
-                eventBuilder.SetAddOnMethod(GenerateProxyMethodFromInfo(evt.GetAddMethod(), typeBuilder, callHandlerFieldBuilder, getMethodFromHandle));
-                eventBuilder.SetRemoveOnMethod(GenerateProxyMethodFromInfo(evt.GetRemoveMethod(), typeBuilder, callHandlerFieldBuilder, getMethodFromHandle));
+
+                eventBuilder.SetAddOnMethod(GenerateProxyMethodFromInfo(
+                    evt.GetAddMethod(),
+                    typeBuilder,
+                    callHandlerFieldBuilder,
+                    getMethodFromHandle));
+
+                eventBuilder.SetRemoveOnMethod(GenerateProxyMethodFromInfo(
+                    evt.GetRemoveMethod(),
+                    typeBuilder, 
+                    callHandlerFieldBuilder,
+                    getMethodFromHandle));
             }
 
             return typeBuilder.CreateType();
