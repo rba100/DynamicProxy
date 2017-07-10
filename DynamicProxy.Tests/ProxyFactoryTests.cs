@@ -36,6 +36,8 @@ namespace DynamicProxy.Tests
                 .SetName("Remove_Event");
             yield return new TestCaseData((Action<ITestInterface>)(ti => ti.Integer = 1), "set_Integer")
                 .SetName("Set property");
+            yield return new TestCaseData((Action<ITestInterface>)(ti => ti.IntegerSetOnly = 1), "set_IntegerSetOnly")
+                .SetName("SetOnly property");
             yield return new TestCaseData((Action<ITestInterface>)(ti => ti[1] = 10), "set_Item")
                 .SetName("Set int index");
             yield return new TestCaseData((Action<ITestInterface>)(ti => ti["hello"] = "world"), "set_Item")
@@ -71,6 +73,8 @@ namespace DynamicProxy.Tests
                 .SetName("IntMethodOverride(object)");
             yield return new TestCaseData((Func<ITestInterface, object>)(ti => ti.Integer), empty, "get_Integer", 0)
                 .SetName("Get property");
+            yield return new TestCaseData((Func<ITestInterface, object>)(ti => ti.IntegerGetOnly), empty, "get_IntegerGetOnly", 0)
+                .SetName("GetOnly property");
             yield return new TestCaseData((Func<ITestInterface, object>)(ti => ti[1]), ia, "get_Item", 99)
                 .SetName("Get int index");
             yield return new TestCaseData((Func<ITestInterface, object>)(ti => ti["payload"]), sa, "get_Item", "moon")
@@ -147,6 +151,36 @@ namespace DynamicProxy.Tests
             var factory = new ProxyFactory();
             Assert.Throws<NotSupportedException>(() => factory.Create<TestAbstractClass>(handler));
         }
+
+        [Test]
+        public void PropertiesAreDynamicallyInvocable()
+        {
+            var handler = MockRepository.GenerateStub<ICallHandler>();
+            var factory = new ProxyFactory();
+            dynamic proxy = factory.Create<ITestInterface>(handler);
+            proxy.Integer = 1;
+        }
+
+        [Test]
+        public void EventsAreDynamicallyInvocable()
+        {
+            var handler = MockRepository.GenerateStub<ICallHandler>();
+            var factory = new ProxyFactory();
+            dynamic proxy = factory.Create<ITestInterface>(handler);
+            var eHander = (EventHandler) ((t, s) => { });
+            proxy.Event += eHander;
+            proxy.Event -= eHander;
+        }
+
+        [Test]
+        public void IndexersAreDynamicallyInvocable()
+        {
+            var handler = MockRepository.GenerateStub<ICallHandler>();
+            var factory = new ProxyFactory();
+            dynamic proxy = factory.Create<ITestInterface>(handler);
+            proxy[1] = 1;
+            proxy["t"] = "t";
+        }
     }
 
     public interface ITestInterface
@@ -166,6 +200,8 @@ namespace DynamicProxy.Tests
         event EventHandler Event;
 
         int Integer { get; set; }
+        int IntegerGetOnly { get; }
+        int IntegerSetOnly { set; }
 
         int this[int index] { get; set; }
         string this[string index] { get; set; }

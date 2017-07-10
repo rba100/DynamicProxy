@@ -1,4 +1,5 @@
 using System;
+using System.CodeDom;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
@@ -83,7 +84,8 @@ namespace DynamicProxy
 
         private Type CreateInterfaceImplementation<T>()
         {
-            var typeBuilder = CreateClassBuilder(typeof(T));
+            var interfaceType = typeof(T);
+            var typeBuilder = CreateClassBuilder(interfaceType);
 
             // Add 'private readonly ICallHandler _callHandler'
             var callHandlerFieldBuilder = typeBuilder.DefineField("_callHandler", typeof(ICallHandler),
@@ -94,65 +96,114 @@ namespace DynamicProxy
 
             GenerateConstructor(typeBuilder, callHandlerFieldBuilder);
 
-            var methods = typeof(T).GetMethods();
+            var properties = interfaceType.GetProperties();
+            var events = interfaceType.GetEvents();
+            var methods = interfaceType.GetMethods().Where(m => !m.IsSpecialName);
+
             foreach (var methodInfo in methods)
             {
-                var parameters = methodInfo.GetParameters().Select(p => p.ParameterType).ToArray();
-                var method = typeBuilder.DefineMethod(
-                    methodInfo.Name,
-                    MethodAttributes.Public | MethodAttributes.Virtual,
-                    methodInfo.ReturnType,
-                    parameters);
-
-                var g = method.GetILGenerator();
-                g.DeclareLocal(typeof(object[]));
-
-                // var args = new object[parameters.Length]
-                g.Emit(OpCodes.Ldc_I4, parameters.Length);
-                g.Emit(OpCodes.Newarr, typeof(object));
-                g.Emit(OpCodes.Stloc_0);
-
-                for (var index = 0; index < parameters.Length; index++)
-                {
-                    var parameter = parameters[index];
-                    // Push array location
-                    g.Emit(OpCodes.Ldloc_0);
-                    // Push array index
-                    g.Emit(OpCodes.Ldc_I4, index);
-                    // push value
-                    g.Emit(OpCodes.Ldarg, index + 1);
-                    // box if need be
-                    if (parameter.IsValueType) g.Emit(OpCodes.Box, parameter);
-                    // set array value
-                    g.Emit(OpCodes.Stelem_Ref);
-                }
-
-                // Call ICallHandler.HandleCall(@_callHandler, methodBase, args)
-                // ARG 0 is @_callHandler
-                g.Emit(OpCodes.Ldarg_0);
-                g.Emit(OpCodes.Ldfld, callHandlerFieldBuilder);
-                // ARG 1 is MethodInfo for this method
-                g.Emit(OpCodes.Ldtoken, methodInfo);
-                g.Emit(OpCodes.Call, getMethodFromHandle);
-                g.Emit(OpCodes.Castclass, typeof(MethodInfo));
-                // ARG 2 is object[] args
-                g.Emit(OpCodes.Ldloc_0);
-                // The call
-                g.Emit(OpCodes.Callvirt, typeof(ICallHandler).GetMethod("HandleCall"));
-
-                // If method returns void then ditch the HandleCall result from the stack
-                if (methodInfo.ReturnType == typeof(void))
-                {
-                    g.Emit(OpCodes.Pop);
-                }
-                // otherwise unbox the return value if needed
-                else if (methodInfo.ReturnType.IsValueType)
-                {
-                    g.Emit(OpCodes.Unbox_Any, methodInfo.ReturnType);
-                }
-                g.Emit(OpCodes.Ret);
+                GenerateProxyMethodFromInfo(methodInfo, typeBuilder, callHandlerFieldBuilder, getMethodFromHandle);
             }
+
+            foreach (var property in properties)
+            {
+                var propertyBuilder = typeBuilder.DefineProperty(property.Name, PropertyAttributes.None,
+                    property.PropertyType, null);
+
+                var setter = property.GetSetMethod();
+                if (setter != null)
+                {
+                    propertyBuilder.SetSetMethod(GenerateProxyMethodFromInfo(setter, typeBuilder, callHandlerFieldBuilder, getMethodFromHandle));
+                }
+
+                var getter = property.GetGetMethod();
+                if (getter != null)
+                {
+                    propertyBuilder.SetGetMethod(GenerateProxyMethodFromInfo(getter, typeBuilder, callHandlerFieldBuilder, getMethodFromHandle));
+                }
+            }
+
+            foreach (var evt in events)
+            {
+                var eventBuilder = typeBuilder.DefineEvent(evt.Name, EventAttributes.None, evt.EventHandlerType);
+                eventBuilder.SetAddOnMethod(GenerateProxyMethodFromInfo(evt.GetAddMethod(), typeBuilder, callHandlerFieldBuilder, getMethodFromHandle));
+                eventBuilder.SetRemoveOnMethod(GenerateProxyMethodFromInfo(evt.GetRemoveMethod(), typeBuilder, callHandlerFieldBuilder, getMethodFromHandle));
+            }
+
             return typeBuilder.CreateType();
+        }
+
+        private MethodBuilder GenerateProxyMethodFromInfo(
+            MethodInfo methodInfo, 
+            TypeBuilder typeBuilder,
+            FieldBuilder callHandlerFieldBuilder, 
+            MethodInfo getMethodFromHandle)
+        {
+            var basicAttributes =
+                MethodAttributes.Public
+                | MethodAttributes.Virtual;
+
+            var specialNameAttributes = basicAttributes
+                | MethodAttributes.HideBySig
+                | MethodAttributes.SpecialName;
+
+            var attributes = methodInfo.IsSpecialName ? specialNameAttributes : basicAttributes;
+            var parameters = methodInfo.GetParameters().Select(p => p.ParameterType).ToArray();
+            var method = typeBuilder.DefineMethod(
+                methodInfo.Name,
+                attributes,
+                methodInfo.ReturnType,
+                parameters);
+
+            var g = method.GetILGenerator();
+            g.DeclareLocal(typeof(object[]));
+
+            // var args = new object[parameters.Length]
+            g.Emit(OpCodes.Ldc_I4, parameters.Length);
+            g.Emit(OpCodes.Newarr, typeof(object));
+            g.Emit(OpCodes.Stloc_0);
+
+            for (var index = 0; index < parameters.Length; index++)
+            {
+                var parameter = parameters[index];
+                // Push array location
+                g.Emit(OpCodes.Ldloc_0);
+                // Push array index
+                g.Emit(OpCodes.Ldc_I4, index);
+                // push value
+                g.Emit(OpCodes.Ldarg, index + 1);
+                // box if need be
+                if (parameter.IsValueType) g.Emit(OpCodes.Box, parameter);
+                // set array value
+                g.Emit(OpCodes.Stelem_Ref);
+            }
+
+            // Call ICallHandler.HandleCall(@_callHandler, methodBase, args)
+            // ARG 0 is @_callHandler
+            g.Emit(OpCodes.Ldarg_0);
+            g.Emit(OpCodes.Ldfld, callHandlerFieldBuilder);
+            // ARG 1 is MethodInfo for this method
+            g.Emit(OpCodes.Ldtoken, methodInfo);
+            g.Emit(OpCodes.Call, getMethodFromHandle);
+            g.Emit(OpCodes.Castclass, typeof(MethodInfo));
+            // ARG 2 is object[] args
+            g.Emit(OpCodes.Ldloc_0);
+            // The call
+            g.Emit(OpCodes.Callvirt, typeof(ICallHandler).GetMethod("HandleCall"));
+
+            // If method returns void then ditch the HandleCall result from the stack
+            if (methodInfo.ReturnType == typeof(void))
+            {
+                g.Emit(OpCodes.Pop);
+            }
+            // otherwise unbox the return value if needed
+            else if (methodInfo.ReturnType.IsValueType)
+            {
+                g.Emit(OpCodes.Unbox_Any, methodInfo.ReturnType);
+            }
+            g.Emit(OpCodes.Ret);
+
+            return method;
         }
 
         private static void GenerateConstructor(TypeBuilder typeBuilder, FieldBuilder callbackFieldBuilder)
