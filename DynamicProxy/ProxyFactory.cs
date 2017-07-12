@@ -1,5 +1,4 @@
 using System;
-using System.CodeDom;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
@@ -79,6 +78,9 @@ namespace DynamicProxy
                 TypeAttributes.AutoLayout);
             typeBuilder.AddInterfaceImplementation(interfaceType);
 
+            // All proxy objects shall be disposable
+            typeBuilder.AddInterfaceImplementation(typeof(IDisposable));
+
             return typeBuilder;
         }
 
@@ -99,6 +101,7 @@ namespace DynamicProxy
             var properties = interfaceType.GetProperties();
             var events = interfaceType.GetEvents();
             var methods = interfaceType.GetMethods().Where(m => !m.IsSpecialName);
+            if (!methods.Any(m => m.Name == "Dispose")) methods = methods.Union(typeof(IDisposable).GetMethods());
 
             foreach (var methodInfo in methods)
             {
@@ -146,7 +149,7 @@ namespace DynamicProxy
 
                 eventBuilder.SetRemoveOnMethod(GenerateProxyMethodFromInfo(
                     evt.GetRemoveMethod(),
-                    typeBuilder, 
+                    typeBuilder,
                     callHandlerFieldBuilder,
                     getMethodFromHandle));
             }
@@ -177,29 +180,25 @@ namespace DynamicProxy
                 parameters);
 
             var g = method.GetILGenerator();
-            g.DeclareLocal(typeof(object[]));
 
             // var args = new object[parameters.Length]
+            g.DeclareLocal(typeof(object[]));
             g.Emit(OpCodes.Ldc_I4, parameters.Length);
             g.Emit(OpCodes.Newarr, typeof(object));
             g.Emit(OpCodes.Stloc_0);
 
+            // Copy each method paramter to the args array
             for (var index = 0; index < parameters.Length; index++)
             {
                 var parameter = parameters[index];
-                // Push array location
                 g.Emit(OpCodes.Ldloc_0);
-                // Push array index
                 g.Emit(OpCodes.Ldc_I4, index);
-                // push value
                 g.Emit(OpCodes.Ldarg, index + 1);
-                // box if need be
                 if (parameter.IsValueType) g.Emit(OpCodes.Box, parameter);
-                // set array value
                 g.Emit(OpCodes.Stelem_Ref);
             }
 
-            // Call ICallHandler.HandleCall(@_callHandler, methodBase, args)
+            // Call ICallHandler.HandleCall
             // ARG 0 is @_callHandler
             g.Emit(OpCodes.Ldarg_0);
             g.Emit(OpCodes.Ldfld, callHandlerFieldBuilder);
