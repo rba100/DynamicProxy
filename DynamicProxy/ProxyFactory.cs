@@ -12,7 +12,7 @@ namespace DynamicProxy
     /// generated object are called, the call is deledated to the ICallHandler provider
     /// that consumers must implement.
     /// </summary>
-    public class ProxyFactory
+    internal class ProxyFactory
     {
         private static ModuleBuilder s_ModuleBuilder;
 
@@ -100,13 +100,15 @@ namespace DynamicProxy
 
             var properties = interfaceType.GetProperties();
             var events = interfaceType.GetEvents();
-            var methods = interfaceType.GetMethods().Where(m => !m.IsSpecialName);
-            if (!methods.Any(m => m.Name == "Dispose")) methods = methods.Union(typeof(IDisposable).GetMethods());
+            var methods = interfaceType.GetMethods()
+                .Where(m => !m.IsSpecialName && m.Name != "Dispose");
 
             foreach (var methodInfo in methods)
             {
                 GenerateProxyMethodFromInfo(methodInfo, typeBuilder, callHandlerFieldBuilder, getMethodFromHandle);
             }
+
+            GenerateProxyDispose(typeBuilder, callHandlerFieldBuilder);
 
             foreach (var property in properties)
             {
@@ -158,9 +160,9 @@ namespace DynamicProxy
         }
 
         private MethodBuilder GenerateProxyMethodFromInfo(
-            MethodInfo methodInfo, 
+            MethodInfo methodInfo,
             TypeBuilder typeBuilder,
-            FieldBuilder callHandlerFieldBuilder, 
+            FieldBuilder callHandlerFieldBuilder,
             MethodInfo getMethodFromHandle)
         {
             var basicAttributes =
@@ -226,6 +228,20 @@ namespace DynamicProxy
             return method;
         }
 
+        private void GenerateProxyDispose(TypeBuilder typeBuilder, FieldBuilder callHandlerFieldBuilder)
+        {
+            var disposeMethod = typeBuilder.DefineMethod(
+                "Dispose",
+                MethodAttributes.Public | MethodAttributes.Virtual,
+                typeof(void),
+                Type.EmptyTypes);
+            var g = disposeMethod.GetILGenerator();
+            g.Emit(OpCodes.Ldarg_0);
+            g.Emit(OpCodes.Ldfld, callHandlerFieldBuilder);
+            g.Emit(OpCodes.Callvirt, typeof(ICallHandler).GetMethod("HandleDispose"));
+            g.Emit(OpCodes.Ret);
+        }
+
         private static void GenerateConstructor(TypeBuilder typeBuilder, FieldBuilder callbackFieldBuilder)
         {
             var ctor = typeBuilder.DefineConstructor(
@@ -241,5 +257,11 @@ namespace DynamicProxy
             g.Emit(OpCodes.Stfld, callbackFieldBuilder);
             g.Emit(OpCodes.Ret);
         }
+    }
+
+    public interface ICallHandler
+    {
+        object HandleCall(MethodInfo methodInfo, object[] args);
+        void HandleDispose();
     }
 }

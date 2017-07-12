@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Reflection;
 using NUnit.Framework;
 using Rhino.Mocks;
@@ -180,6 +181,19 @@ namespace DynamicProxy.Tests
             dynamic proxy = factory.Create<ITestInterface>(handler);
             proxy[1] = 1;
             proxy["t"] = "t";
+        }
+
+        [Test]
+        public void HandleDisposeIsCalledOnDispose()
+        {
+            var handler = MockRepository.GenerateStrictMock<ICallHandler>();
+            handler.Expect(h => h.HandleDispose()).Repeat.Once();
+            var factory = new ProxyFactory();
+            // ReSharper disable once SuspiciousTypeConversion.Global
+            var proxy = factory.Create<ITestInterface>(handler) as IDisposable;
+            Debug.Assert(proxy != null, "proxy != null");
+            proxy.Dispose();
+            handler.VerifyAllExpectations();
         }
     }
 
